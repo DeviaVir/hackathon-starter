@@ -5,7 +5,7 @@ block content
     h3 Profile Information
 
   form.form-horizontal(action='/account/profile', method='POST')
-    input(type='hidden', name='_csrf', value=token)
+    input(type='hidden', name='_csrf', value=_csrf)
     .form-group
       label.col-sm-2.control-label(for='email') Email
       .col-sm-4
@@ -41,12 +41,11 @@ block content
           i.fa.fa-magnet
           | Update Profile
 
-
   .page-header
     h3 Change Password
 
   form.form-horizontal(action='/account/password', method='POST')
-    input(type='hidden', name='_csrf', value=token)
+    input(type='hidden', name='_csrf', value=_csrf)
     .form-group
       label.col-sm-3.control-label(for='password') New Password
       .col-sm-4
@@ -66,13 +65,18 @@ block content
 
   p You can delete your account, but keep in mind this action is irreversible.
   form(action='/account/delete', method='POST')
-    input(type='hidden', name='_csrf', value=token)
+    input(type='hidden', name='_csrf', value=_csrf)
     button.btn.btn-danger(type='submit')
       i.fa.fa-trash-o
       | Delete my account
 
   .page-header
     h3 Linked Accounts
+
+  if user.instagram
+    p: a.text-danger(href='/account/unlink/instagram') Unlink your Instagram account
+  else
+    p: a(href='/auth/instagram') Link your Instagram account
 
   if user.google
     p: a.text-danger(href='/account/unlink/google') Unlink your Google account
@@ -93,3 +97,8 @@ block content
     p: a.text-danger(href='/account/unlink/github') Unlink your GitHub account
   else
     p: a(href='/auth/github') Link your GitHub account
+
+  if user.linkedin
+    p: a.text-danger(href='/account/unlink/linkedin') Unlink your LinkedIn account
+  else
+    p: a(href='/auth/linkedin') Link your LinkedIn account
