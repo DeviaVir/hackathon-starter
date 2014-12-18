@@ -1,4 +1,4 @@
-var _ = require('underscore');
+var _ = require('lodash');
 var passport = require('passport');
 var InstagramStrategy = require('passport-instagram').Strategy;
 var LocalStrategy = require('passport-local').Strategy;
@@ -55,7 +55,7 @@ passport.use(new InstagramStrategy(secrets.instagram,function(req, accessToken, 
       // Similar to Twitter API, assigns a temporary e-mail address
       // to get on with the registration process. It can be changed later
       // to a valid e-mail address in Profile Management.
-      profile.username + "@instagram.com";
+      user.email = profile.username + "@instagram.com";
       user.profile.website = profile._json.data.website;
       user.profile.picture = profile._json.data.profile_picture;
       user.save(function(err) {
@@ -204,7 +204,7 @@ passport.use(new TwitterStrategy(secrets.twitter, function(req, accessToken, tok
           user.tokens.push({ kind: 'twitter', accessToken: accessToken, tokenSecret: tokenSecret });
           user.profile.name = user.profile.name || profile.displayName;
           user.profile.location = user.profile.location || profile._json.location;
-          user.profile.picture = user.profile.picture || profile._json.profile_image_url;
+          user.profile.picture = user.profile.picture || profile._json.profile_image_url_https;
           user.save(function(err) {
             req.flash('info', { msg: 'Twitter account has been linked.' });
             done(err, user);
@@ -225,7 +225,7 @@ passport.use(new TwitterStrategy(secrets.twitter, function(req, accessToken, tok
       user.tokens.push({ kind: 'twitter', accessToken: accessToken, tokenSecret: tokenSecret });
       user.profile.name = profile.displayName;
       user.profile.location = profile._json.location;
-      user.profile.picture = profile._json.profile_image_url;
+      user.profile.picture = profile._json.profile_image_url_https;
       user.save(function(err) {
         done(err, user);
       });
@@ -400,7 +400,7 @@ exports.isAuthenticated = function(req, res, next) {
 exports.isAuthorized = function(req, res, next) {
   var provider = req.path.split('/').slice(-1)[0];
 
-  if (_.findWhere(req.user.tokens, { kind: provider })) {
+  if (_.find(req.user.tokens, { kind: provider })) {
     next();
   } else {
     res.redirect('/auth/' + provider);

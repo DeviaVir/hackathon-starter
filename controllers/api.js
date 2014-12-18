@@ -5,18 +5,19 @@ var validator = require('validator');
 var async = require('async');
 var cheerio = require('cheerio');
 var request = require('request');
-var _ = require('underscore');
 var graph = require('fbgraph');
 var LastFmNode = require('lastfm').LastFmNode;
 var tumblr = require('tumblr.js');
 var foursquare = require('node-foursquare')({ secrets: secrets.foursquare });
 var Github = require('github-api');
 var Twit = require('twit');
-var stripe =  require('stripe')(secrets.stripe.apiKey);
+var stripe =  require('stripe')(secrets.stripe.secretKey);
 var twilio = require('twilio')(secrets.twilio.sid, secrets.twilio.token);
 var Linkedin = require('node-linkedin')(secrets.linkedin.clientID, secrets.linkedin.clientSecret, secrets.linkedin.callbackURL);
 var clockwork = require('clockwork')({key: secrets.clockwork.apiKey});
 var ig = require('instagram-node').instagram();
+var Y = require('yui/yql');
+var _ = require('lodash');
 
 /**
  * GET /api
@@ -35,7 +36,7 @@ exports.getApi = function(req, res) {
  */
 
 exports.getFoursquare = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'foursquare' });
+  var token = _.find(req.user.tokens, { kind: 'foursquare' });
   async.parallel({
     trendingVenues: function(callback) {
       foursquare.Venues.getTrending('40.7222756', '-74.0022724', { limit: 50 }, token.accessToken, function(err, results) {
@@ -69,8 +70,8 @@ exports.getFoursquare = function(req, res, next) {
  * Tumblr API example.
  */
 
-exports.getTumblr = function(req, res) {
-  var token = _.findWhere(req.user.tokens, { kind: 'tumblr' });
+exports.getTumblr = function(req, res, next) {
+  var token = _.find(req.user.tokens, { kind: 'tumblr' });
   var client = tumblr.createClient({
     consumer_key: secrets.tumblr.consumerKey,
     consumer_secret: secrets.tumblr.consumerSecret,
@@ -78,6 +79,7 @@ exports.getTumblr = function(req, res) {
     token_secret: token.tokenSecret
   });
   client.posts('withinthisnightmare.tumblr.com', { type: 'photo' }, function(err, data) {
+    if (err) return next(err);
     res.render('api/tumblr', {
       title: 'Tumblr API',
       blog: data.blog,
@@ -92,7 +94,7 @@ exports.getTumblr = function(req, res) {
  */
 
 exports.getFacebook = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'facebook' });
+  var token = _.find(req.user.tokens, { kind: 'facebook' });
   graph.setAccessToken(token.accessToken);
   async.parallel({
     getMe: function(done) {
@@ -126,7 +128,7 @@ exports.getScraping = function(req, res, next) {
     if (err) return next(err);
     var $ = cheerio.load(body);
     var links = [];
-    $(".title a[href^='http'], a[href^='https']").each(function() {
+    $('.title a[href^="http"], a[href^="https"]').each(function() {
       links.push($(this));
     });
     res.render('api/scraping', {
@@ -140,11 +142,13 @@ exports.getScraping = function(req, res, next) {
  * GET /api/github
  * GitHub API Example.
  */
-exports.getGithub = function(req, res) {
-  var token = _.findWhere(req.user.tokens, { kind: 'github' });
+
+exports.getGithub = function(req, res, next) {
+  var token = _.find(req.user.tokens, { kind: 'github' });
   var github = new Github({ token: token.accessToken });
   var repo = github.getRepo('sahat', 'requirejs-library');
   repo.show(function(err, repo) {
+    if (err) return next(err);
     res.render('api/github', {
       title: 'GitHub API',
       repo: repo
@@ -172,7 +176,8 @@ exports.getAviary = function(req, res) {
 exports.getNewYorkTimes = function(req, res, next) {
   var query = querystring.stringify({ 'api-key': secrets.nyt.key, 'list-name': 'young-adult' });
   var url = 'http://api.nytimes.com/svc/books/v2/lists?' + query;
-  request.get(url, function(error, request, body) {
+  request.get(url, function(err, request, body) {
+    if (err) return next(err);
     if (request.statusCode === 403) return next(Error('Missing or Invalid New York Times API Key'));
     var bestsellers = JSON.parse(body);
     res.render('api/nyt', {
@@ -191,8 +196,8 @@ exports.getLastfm = function(req, res, next) {
   var lastfm = new LastFmNode(secrets.lastfm);
   async.parallel({
     artistInfo: function(done) {
-      lastfm.request("artist.getInfo", {
-        artist: 'Epica',
+      lastfm.request('artist.getInfo', {
+        artist: 'The Pierces',
         handlers: {
           success: function(data) {
             done(null, data);
@@ -203,9 +208,26 @@ exports.getLastfm = function(req, res, next) {
         }
       });
     },
+    artistTopTracks: function(done) {
+      lastfm.request('artist.getTopTracks', {
+        artist: 'The Pierces',
+        handlers: {
+          success: function(data) {
+            var tracks = [];
+            _.each(data.toptracks.track, function(track) {
+              tracks.push(track);
+            });
+            done(null, tracks.slice(0,10));
+          },
+          error: function(err) {
+            done(err);
+          }
+        }
+      });
+    },
     artistTopAlbums: function(done) {
-      lastfm.request("artist.getTopAlbums", {
-        artist: 'Epica',
+      lastfm.request('artist.getTopAlbums', {
+        artist: 'The Pierces',
         handlers: {
           success: function(data) {
             var albums = [];
@@ -230,7 +252,8 @@ exports.getLastfm = function(req, res, next) {
       bio: results.artistInfo.artist.bio.summary,
       stats: results.artistInfo.artist.stats,
       similar: results.artistInfo.artist.similar.artist,
-      topAlbums: results.artistTopAlbums
+      topAlbums: results.artistTopAlbums,
+      topTracks: results.artistTopTracks
     };
     res.render('api/lastfm', {
       title: 'Last.fm API',
@@ -245,19 +268,45 @@ exports.getLastfm = function(req, res, next) {
  */
 
 exports.getTwitter = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'twitter' });
+  var token = _.find(req.user.tokens, { kind: 'twitter' });
   var T = new Twit({
     consumer_key: secrets.twitter.consumerKey,
     consumer_secret: secrets.twitter.consumerSecret,
     access_token: token.accessToken,
     access_token_secret: token.tokenSecret
   });
-  T.get('search/tweets', { q: 'hackathon since:2013-01-01', geocode: '40.71448,-74.00598,5mi', count: 50 }, function(err, reply) {
+  T.get('search/tweets', { q: 'nodejs since:2013-01-01', geocode: '40.71448,-74.00598,5mi', count: 10 }, function(err, reply) {
     if (err) return next(err);
     res.render('api/twitter', {
       title: 'Twitter API',
       tweets: reply.statuses
     });
+  });
+};
+
+/**
+ * POST /api/twitter
+ * Post a tweet.
+ */
+
+exports.postTwitter = function(req, res, next) {
+  req.assert('tweet', 'Tweet cannot be empty.').notEmpty();
+  var errors = req.validationErrors();
+  if (errors) {
+    req.flash('errors', errors);
+    return res.redirect('/api/twitter');
+  }
+  var token = _.find(req.user.tokens, { kind: 'twitter' });
+  var T = new Twit({
+    consumer_key: secrets.twitter.consumerKey,
+    consumer_secret: secrets.twitter.consumerSecret,
+    access_token: token.accessToken,
+    access_token_secret: token.tokenSecret
+  });
+  T.post('statuses/update', { status: req.body.tweet }, function(err, data, response) {
+    if (err) return next(err);
+    req.flash('success', { msg: 'Tweet has been posted.'});
+    res.redirect('/api/twitter');
   });
 };
 
@@ -269,7 +318,6 @@ exports.getTwitter = function(req, res, next) {
 exports.getSteam = function(req, res, next) {
   var steamId = '76561197982488301';
   var query = { l: 'english', steamid: steamId, key: secrets.steam.apiKey };
-
   async.parallel({
     playerAchievements: function(done) {
       query.appid = '49520';
@@ -282,18 +330,18 @@ exports.getSteam = function(req, res, next) {
     playerSummaries: function(done) {
       query.steamids = steamId;
       var qs = querystring.stringify(query);
-      request.get({ url: 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?' + qs, json: true }, function(error, request, body) {
+      request.get({ url: 'http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?' + qs, json: true }, function(err, request, body) {
         if (request.statusCode === 401) return done(new Error('Missing or Invalid Steam API Key'));
-        done(error, body);
+        done(err, body);
       });
     },
     ownedGames: function(done) {
       query.include_appinfo = 1;
       query.include_played_free_games = 1;
       var qs = querystring.stringify(query);
-      request.get({ url: 'http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?' + qs, json: true }, function(error, request, body) {
+      request.get({ url: 'http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?' + qs, json: true }, function(err, request, body) {
         if (request.statusCode === 401) return done(new Error('Missing or Invalid Steam API Key'));
-        done(error, body);
+        done(err, body);
       });
     }
   },
@@ -315,20 +363,19 @@ exports.getSteam = function(req, res, next) {
 
 exports.getStripe = function(req, res) {
   res.render('api/stripe', {
-    title: 'Stripe API'
+    title: 'Stripe API',
+    publishableKey: secrets.stripe.publishableKey
   });
 };
 
 /**
  * POST /api/stripe
- * @param stipeToken
- * @param stripeEmail
+ * Make a payment.
  */
 
 exports.postStripe = function(req, res, next) {
   var stripeToken = req.body.stripeToken;
   var stripeEmail = req.body.stripeEmail;
-
   stripe.charges.create({
     amount: 395,
     currency: 'usd',
@@ -336,10 +383,10 @@ exports.postStripe = function(req, res, next) {
     description: stripeEmail
   }, function(err, charge) {
     if (err && err.type === 'StripeCardError') {
-      req.flash('errors', { msg: 'Your card has been declined.'});
+      req.flash('errors', { msg: 'Your card has been declined.' });
       res.redirect('/api/stripe');
     }
-    req.flash('success', { msg: 'Your card has been charged successfully.'});
+    req.flash('success', { msg: 'Your card has been charged successfully.' });
     res.redirect('/api/stripe');
   });
 };
@@ -349,7 +396,7 @@ exports.postStripe = function(req, res, next) {
  * Twilio API example.
  */
 
-exports.getTwilio = function(req, res, next) {
+exports.getTwilio = function(req, res) {
   res.render('api/twilio', {
     title: 'Twilio API'
   });
@@ -357,15 +404,21 @@ exports.getTwilio = function(req, res, next) {
 
 /**
  * POST /api/twilio
- * Twilio API example.
- * @param telephone
+ * Send a text message using Twilio.
  */
 
 exports.postTwilio = function(req, res, next) {
+  req.assert('number', 'Phone number is required.').notEmpty();
+  req.assert('message', 'Message cannot be blank.').notEmpty();
+  var errors = req.validationErrors();
+  if (errors) {
+    req.flash('errors', errors);
+    return res.redirect('/api/twilio');
+  }
   var message = {
-    to: req.body.telephone,
+    to: req.body.number,
     from: '+13472235148',
-    body: 'Hello from the Hackathon Starter'
+    body: req.body.message
   };
   twilio.sendMessage(message, function(err, responseData) {
     if (err) return next(err.message);
@@ -387,8 +440,7 @@ exports.getClockwork = function(req, res) {
 
 /**
  * POST /api/clockwork
- * Clockwork SMS API example.
- * @param telephone
+ * Send a text message using Clockwork SMS
  */
 
 exports.postClockwork = function(req, res, next) {
@@ -410,9 +462,8 @@ exports.postClockwork = function(req, res, next) {
  */
 
 exports.getVenmo = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'venmo' });
+  var token = _.find(req.user.tokens, { kind: 'venmo' });
   var query = querystring.stringify({ access_token: token.accessToken });
-
   async.parallel({
     getProfile: function(done) {
       request.get({ url: 'https://api.venmo.com/v1/me?' + query, json: true }, function(err, request, body) {
@@ -422,7 +473,6 @@ exports.getVenmo = function(req, res, next) {
     getRecentPayments: function(done) {
       request.get({ url: 'https://api.venmo.com/v1/payments?' + query, json: true }, function(err, request, body) {
         done(err, body);
-
       });
     }
   },
@@ -438,9 +488,6 @@ exports.getVenmo = function(req, res, next) {
 
 /**
  * POST /api/venmo
- * @param user
- * @param note
- * @param amount
  * Send money.
  */
 
@@ -448,22 +495,17 @@ exports.postVenmo = function(req, res, next) {
   req.assert('user', 'Phone, Email or Venmo User ID cannot be blank').notEmpty();
   req.assert('note', 'Please enter a message to accompany the payment').notEmpty();
   req.assert('amount', 'The amount you want to pay cannot be blank').notEmpty();
-
   var errors = req.validationErrors();
-
   if (errors) {
     req.flash('errors', errors);
     return res.redirect('/api/venmo');
   }
-
-  var token = _.findWhere(req.user.tokens, { kind: 'venmo' });
-
+  var token = _.find(req.user.tokens, { kind: 'venmo' });
   var formData = {
     access_token: token.accessToken,
     note: req.body.note,
     amount: req.body.amount
   };
-
   if (validator.isEmail(req.body.user)) {
     formData.email = req.body.user;
   } else if (validator.isNumeric(req.body.user) &&
@@ -472,7 +514,6 @@ exports.postVenmo = function(req, res, next) {
   } else {
     formData.user_id = req.body.user;
   }
-
   request.post('https://api.venmo.com/v1/payments', { form: formData }, function(err, request, body) {
     if (err) return next(err);
     if (request.statusCode !== 200) {
@@ -490,9 +531,8 @@ exports.postVenmo = function(req, res, next) {
  */
 
 exports.getLinkedin = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'linkedin' });
+  var token = _.find(req.user.tokens, { kind: 'linkedin' });
   var linkedin = Linkedin.init(token.accessToken);
-
   linkedin.people.me(function(err, $in) {
     if (err) return next(err);
     res.render('api/linkedin', {
@@ -508,20 +548,17 @@ exports.getLinkedin = function(req, res, next) {
  */
 
 exports.getInstagram = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'instagram' });
-
-  ig.use({ access_token: token });
+  var token = _.find(req.user.tokens, { kind: 'instagram' });
   ig.use({ client_id: secrets.instagram.clientID, client_secret: secrets.instagram.clientSecret });
-
+  ig.use({ access_token: token.accessToken });
   async.parallel({
     searchByUsername: function(done) {
-      ig.user_search('lisa_veronica', function(err, users, limit) {
+      ig.user_search('richellemead', function(err, users, limit) {
         done(err, users);
       });
     },
     searchByUserId: function(done) {
       ig.user('175948269', function(err, user) {
-        console.log(user);
         done(err, user);
       });
     },
@@ -529,28 +566,37 @@ exports.getInstagram = function(req, res, next) {
       ig.media_popular(function(err, medias) {
         done(err, medias);
       });
+    },
+    myRecentMedia: function(done) {
+      ig.user_self_media_recent(function(err, medias, pagination, limit) {
+        done(err, medias);
+      });
     }
-  },
-  function(err, results) {
+  }, function(err, results) {
+    if (err) return next(err);
     res.render('api/instagram', {
       title: 'Instagram API',
       usernames: results.searchByUsername,
       userById: results.searchByUserId,
-      popularImages: results.popularImages
+      popularImages: results.popularImages,
+      myRecentMedia: results.myRecentMedia
     });
   });
 };
 
-exports.postInstagram = function(req, res, next) {
-  var token = _.findWhere(req.user.tokens, { kind: 'instagram' });
+/**
+ * GET /api/yahoo
+ * Yahoo API example.
+ */
 
-  ig.use({ access_token: token });
-  ig.use({ client_id: secrets.instagram.clientID, client_secret: secrets.instagram.clientSecret });
-
-
-
-  ig.user_search('13reasons', function(err, users, limit) {
-    console.log(users);
+exports.getYahoo = function(req, res) {
+  Y.YQL('SELECT * FROM weather.forecast WHERE (location = 10007)', function(response) {
+    var location = response.query.results.channel.location;
+    var condition = response.query.results.channel.item.condition;
+    res.render('api/yahoo', {
+      title: 'Yahoo API',
+      location: location,
+      condition: condition
+    });
   });
-
 };
